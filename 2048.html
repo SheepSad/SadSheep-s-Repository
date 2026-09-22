@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>2048 · 单文件版</title>
+<style>
+/* =========================================================================
+   1. 主题变量：深色 / 浅色两套现代简约配色
+   ========================================================================= */
+:root{
+  --anim: 110ms;                     /* 滑动时长（与 JS 中 ANIM 保持一致） */
+  --radius: 8px;
+  --radius-lg: 16px;
+  --board: min(92vw, 440px, 68svh);  /* 棋盘边长，纯 CSS 响应式 */
+}
+@supports not (height: 100svh){
+  :root{ --board: min(92vw, 440px, 68vh); }
+}
+
+html[data-theme="light"]{
+  --bg:#f3f4f7;         --bg-grad:radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #eef0f4 60%, #e7eaef 100%);
+  --panel:#ffffff;      --board-bg:#e4e7ec;   --cell-bg:#d7dbe2;
+  --fg:#1d2230;         --fg-dim:#6c7383;
+  --accent:#3f74ef;     --accent-fg:#ffffff;
+  --line:rgba(16,22,40,.09);
+  --shadow:0 14px 40px rgba(20,26,45,.13);
+  --tile-shadow:0 1px 2px rgba(20,26,45,.08);
+  --t2:#eef0f4;   --f2:#5b6272;
+  --t4:#dee4ee;   --f4:#5b6272;
+  --t8:#b7cffb;   --f8:#123a75;
+  --t16:#8fb4f8;  --f16:#0e2f66;
+  --t32:#6a95f1;  --f32:#ffffff;
+  --t64:#4a76e8;  --f64:#ffffff;
+  --t128:#7a6cf0; --f128:#ffffff;
+  --t256:#6a55e6; --f256:#ffffff;
+  --t512:#8f45d8; --f512:#ffffff;
+  --t1024:#d8447f;--f1024:#ffffff;
+  --t2048:#f0a52a;--f2048:#3a2a05;
+  --tsuper:#ef3b5c;--fsuper:#ffffff;
+}
+html[data-theme="dark"]{
+  --bg:#0f1115;         --bg-grad:radial-gradient(120% 90% at 50% 0%, #1b2029 0%, #12151b 55%, #0d0f13 100%);
+  --panel:#181b21;      --board-bg:#1b1f26;   --cell-bg:#252a33;
+  --fg:#e9ecf3;         --fg-dim:#8c94a5;
+  --accent:#5b8def;     --accent-fg:#0b0e13;
+  --line:rgba(255,255,255,.09);
+  --shadow:0 18px 50px rgba(0,0,0,.55);
+  --tile-shadow:0 1px 2px rgba(0,0,0,.35);
+  --t2:#2a2f38;   --f2:#cbd2de;
+  --t4:#343b46;   --f4:#cbd2de;
+  --t8:#2b4d8a;   --f8:#d6e6ff;
+  --t16:#2f5aa8;  --f16:#e4efff;
+  --t32:#3a6fcc;  --f32:#ffffff;
+  --t64:#4a80e8;  --f64:#ffffff;
+  --t128:#6b5ff0; --f128:#ffffff;
+  --t256:#7d4ee6; --f256:#ffffff;
+  --t512:#9a45d9; --f512:#ffffff;
+  --t1024:#c9428f;--f1024:#ffffff;
+  --t2048:#e0a02a;--f2048:#241a02;
+  --tsuper:#e8435f;--fsuper:#ffffff;
+}
+
+/* =========================================================================
+   2. 基础布局
+   ========================================================================= */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;padding:14px;
+  min-height:100vh; min-height:100svh;
+  display:flex;justify-content:center;
+  background:var(--bg-grad),var(--bg);
+  background-attachment:fixed;
+  color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  transition:background-color .35s ease,color .35s ease;
+  overflow-x:hidden;
+  user-select:none;-webkit-user-select:none;
+}
+/* margin:auto 而非 align-items:center —— 内容超高时顶部不会被裁掉 */
+.app{width:min(92vw,440px);margin:auto;display:flex;flex-direction:column;gap:10px}
+
+/* 顶栏 */
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.brand h1{
+  margin:0;font-size:34px;line-height:1;letter-spacing:-.03em;font-weight:800;
+  background:linear-gradient(120deg,var(--accent),var(--t512) 60%,var(--t2048));
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent;-webkit-text-fill-color:transparent;
+}
+.brand p{margin:5px 0 0;font-size:12px;color:var(--fg-dim)}
+.actions{display:flex;gap:8px}
+.icon-btn{
+  width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  color:var(--fg);font-size:17px;cursor:pointer;
+  transition:transform .12s ease,background-color .25s ease,border-color .25s ease;
+}
+.icon-btn:active{transform:scale(.93)}
+.icon-btn:hover{border-color:var(--accent)}
+
+/* 数据面板 */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{
+  position:relative;overflow:visible;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:8px 10px;display:flex;flex-direction:column;gap:2px;
+  transition:background-color .35s ease,border-color .35s ease;
+}
+.stat .label{font-size:10px;letter-spacing:.14em;color:var(--fg-dim);text-transform:uppercase}
+.stat .value{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.score-add{
+  position:absolute;right:10px;top:6px;font-size:14px;font-weight:800;color:var(--accent);
+  pointer-events:none;animation:floatUp .75s cubic-bezier(.2,.8,.3,1) forwards;
+}
+@keyframes floatUp{
+  from{opacity:1;transform:translateY(4px) scale(.9)}
+  30%{opacity:1;transform:translateY(-4px) scale(1.1)}
+  to{opacity:0;transform:translateY(-24px) scale(1)}
+}
+
+/* 工具栏 */
+.toolbar{display:flex;gap:8px}
+.btn{
+  appearance:none;flex:1;cursor:pointer;
+  padding:11px 14px;border-radius:12px;font-size:14px;font-weight:700;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  transition:transform .12s ease,background-color .25s ease,border-color .25s ease,opacity .25s;
+}
+.btn:active{transform:scale(.96)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent;
+  box-shadow:0 8px 20px -8px var(--accent)}
+.btn.primary:hover{filter:brightness(1.06)}
+
+/* =========================================================================
+   3. 棋盘与方块
+   ========================================================================= */
+.board{
+  position:relative;margin:0 auto;
+  width:var(--board);height:var(--board);
+  background:var(--board-bg);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow);
+  touch-action:none;
+  transition:background-color .35s ease;
+  /* 由棋盘尺寸推导：内边距 / 间距 / 单元格边长 */
+  --pad:calc(var(--board) * .032);
+  --gap:calc(var(--board) * .032);
+  --cell:calc((var(--board) - var(--pad) * 2 - var(--gap) * 3) / 4);
+}
+/* 背景空格层 */
+.cells{
+  position:absolute;inset:0;display:grid;
+  grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);
+  gap:var(--gap);padding:var(--pad);
+}
+.cell{background:var(--cell-bg);border-radius:var(--radius);transition:background-color .35s ease}
+
+/* 方块层：每个方块绝对定位，用 transform 做位移动画 */
+.tiles{position:absolute;inset:0;pointer-events:none}
+.tile{
+  position:absolute;
+  left:var(--pad);top:var(--pad);
+  width:var(--cell);height:var(--cell);
+  z-index:1;
+  /* 滑动：位移过渡（--x / --y 为 0~3 的格坐标） */
+  transform:translate(
+    calc(var(--x) * (var(--cell) + var(--gap))),
+    calc(var(--y) * (var(--cell) + var(--gap)))
+  );
+  transition:transform var(--anim) cubic-bezier(.22,.75,.28,1);
+  will-change:transform;
+}
+.tile[data-dead="1"]{z-index:3}   /* 被吞并的方块滑行时盖在存活方块之上 */
+
+.tile-inner{
+  width:100%;height:100%;border-radius:var(--radius);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+  background:var(--tb,#8a90a0);color:var(--tf,#fff);
+  box-shadow:var(--tile-shadow);
+  transform-origin:center;
+  transition:background-color .3s ease,color .3s ease;
+  will-change:transform;
+}
+
+/* 各数值配色（--tb 底色 / --tf 字色） */
+.tile[data-v="2"]   {--tb:var(--t2);   --tf:var(--f2)}
+.tile[data-v="4"]   {--tb:var(--t4);   --tf:var(--f4)}
+.tile[data-v="8"]   {--tb:var(--t8);   --tf:var(--f8)}
+.tile[data-v="16"]  {--tb:var(--t16);  --tf:var(--f16)}
+.tile[data-v="32"]  {--tb:var(--t32);  --tf:var(--f32)}
+.tile[data-v="64"]  {--tb:var(--t64);  --tf:var(--f64)}
+.tile[data-v="128"] {--tb:var(--t128); --tf:var(--f128)}
+.tile[data-v="256"] {--tb:var(--t256); --tf:var(--f256)}
+.tile[data-v="512"] {--tb:var(--t512); --tf:var(--f512)}
+.tile[data-v="1024"]{--tb:var(--t1024);--tf:var(--f1024)}
+.tile[data-v="2048"]{--tb:var(--t2048);--tf:var(--f2048)}
+.tile[data-v="super"]{--tb:var(--tsuper);--tf:var(--fsuper)}
+
+/* 新方块：缩放出现 */
+@keyframes appear{
+  from{transform:scale(.25);opacity:0}
+  to{transform:scale(1);opacity:1}
+}
+/* 合并：缩放弹跳（延迟到滑动结束后播放） */
+@keyframes pop{
+  0%{transform:scale(.2)}
+  55%{transform:scale(1.18)}
+  100%{transform:scale(1)}
+}
+/* 合并：闪光 */
+@keyframes flash{
+  0%{box-shadow:0 0 0 0 rgba(255,255,255,0),0 0 0 rgba(255,255,255,0)}
+  30%{box-shadow:0 0 0 5px rgba(255,255,255,.42),0 0 26px rgba(255,255,255,.55)}
+  100%{box-shadow:0 0 0 0 rgba(255,255,255,0),0 0 0 rgba(255,255,255,0)}
+}
+.tile.new .tile-inner{
+  animation:appear 155ms cubic-bezier(.2,.9,.3,1.45) both;
+}
+.tile.merged .tile-inner{
+  /* both 填充 + delay：滑动期间保持缩小状态被滑入的方块遮住，
+     滑行接近结束时再弹出并闪光（延迟略早于 dead 方块被移除，避免闪空一帧） */
+  animation:
+    pop 190ms cubic-bezier(.2,.9,.3,1.35) calc(var(--anim) * .8) both,
+    flash 400ms ease calc(var(--anim) * .8) both;
+}
+
+.hint{margin:0;text-align:center;font-size:12px;color:var(--fg-dim);letter-spacing:.02em}
+.hint kbd{
+  font:inherit;font-weight:700;color:var(--fg);
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 5px;
+}
+
+/* =========================================================================
+   4. 弹窗 / 遮罩
+   ========================================================================= */
+.overlay{
+  position:fixed;inset:0;z-index:50;padding:18px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(8,10,14,.58);
+  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
+  opacity:0;pointer-events:none;transition:opacity .24s ease;
+}
+.overlay.show{opacity:1;pointer-events:auto}
+.card{
+  width:min(400px,100%);max-height:88svh;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:20px;
+  padding:24px 20px;text-align:center;box-shadow:var(--shadow);
+  transform:translateY(14px) scale(.94);opacity:.6;
+  transition:transform .3s cubic-bezier(.2,.9,.3,1.35),opacity .3s ease;
+}
+.overlay.show .card{transform:none;opacity:1}
+.card h2{margin:0 0 6px;font-size:22px;letter-spacing:-.02em}
+.card .muted{margin:0 0 16px;font-size:13px;color:var(--fg-dim)}
+.card .big{
+  font-size:44px;font-weight:900;letter-spacing:-.03em;line-height:1.1;margin:6px 0 14px;
+  background:linear-gradient(120deg,var(--accent),var(--t512) 55%,var(--t2048));
+  -webkit-background-clip:text;background-clip:text;
+  color:transparent;-webkit-text-fill-color:transparent;
+}
+.card .emoji{font-size:40px;display:block;margin-bottom:6px;animation:pop 500ms cubic-bezier(.2,.9,.3,1.4) both}
+.card-actions{display:flex;gap:10px;margin-top:18px}
+.card-actions .btn{flex:1}
+
+ul.hist{list-style:none;margin:0;padding:0;max-height:44svh;overflow:auto;text-align:left}
+ul.hist li{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;gap:10px;
+  padding:9px 10px;border-radius:10px;border:1px solid var(--line);margin-bottom:6px;
+  background:var(--bg);font-size:13px;
+}
+ul.hist li .idx{color:var(--fg-dim);font-size:11px;font-variant-numeric:tabular-nums}
+ul.hist li .sc{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums}
+ul.hist li .meta{color:var(--fg-dim);font-size:11px;white-space:nowrap}
+ul.hist li.empty{display:block;text-align:center;color:var(--fg-dim);border-style:dashed}
+
+/* 小屏 / 横屏微调 */
+@media (max-height:620px){
+  :root{--board:min(92vw,52svh,400px)}
+  .brand h1{font-size:26px}
+  .stat .value{font-size:17px}
+  .btn{padding:9px 12px;font-size:13px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;animation-delay:0ms !important}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>2048</h1>
+      <p>合并相同数字，冲击 2048</p>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="themeBtn" title="切换深色 / 浅色主题" aria-label="切换主题">🌙</button>
+      <button class="icon-btn" id="historyBtn" title="历史战绩" aria-label="历史战绩">🏆</button>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat" id="scoreBox">
+      <span class="label">得分</span>
+      <span class="value" id="scoreEl">0</span>
+    </div>
+    <div class="stat">
+      <span class="label">最高</span>
+      <span class="value" id="bestEl">0</span>
+    </div>
+    <div class="stat">
+      <span class="label">局数</span>
+      <span class="value" id="gamesEl">0</span>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <button class="btn primary" id="newBtn" title="将当前这局计入历史并开始新的一局">新游戏</button>
+    <button class="btn" id="resetBtn" title="清空棋盘重开本局（不计入历史）">重置本局</button>
+  </div>
+
+  <div class="board" id="board">
+    <div class="cells" id="cells"></div>
+    <div class="tiles" id="tiles"></div>
+  </div>
+
+  <p class="hint"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> / <kbd>WASD</kbd> / 手指滑动</p>
+</div>
+
+<div class="overlay" id="overlay"><div class="card" id="card"></div></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =======================================================================
+     常量
+     ======================================================================= */
+  const SIZE  = 4;          // 4 × 4 网格
+  const ANIM  = 110;        // 滑动动画时长(ms)，必须与 CSS 变量 --anim 一致
+  const WIN   = 2048;       // 胜利目标
+  const STORE = 'single-file-2048/v1';
+
+  // 四个方向向量
+  const VECTORS = {
+    up:    { x: 0,  y: -1 },
+    down:  { x: 0,  y: 1  },
+    left:  { x: -1, y: 0  },
+    right: { x: 1,  y: 0  }
+  };
+
+  /* =======================================================================
+     状态
+     ======================================================================= */
+  let tiles     = [];       // 全部方块（含正在消失的 dead 方块），元素形如 {id,value,x,y,...}
+  let uid       = 0;        // 方块自增 id
+  let score     = 0;        // 本局得分
+  let moves     = 0;        // 本局有效步数
+  let best      = 0;        // 历史最高分
+  let history   = [];       // 历史战绩 [{score,max,moves,date}]
+  let locked    = false;    // 动画期间锁输入，避免状态与视觉错位
+  let won       = false;    // 本局是否已达成 2048
+  let over      = false;    // 本局是否已结束
+  let recorded  = false;    // 本局是否已写入历史（防止重复记录）
+  let modalOpen = false;    // 弹窗打开时暂停操作
+  let settleTimer = null;   // 动画收尾定时器
+
+  /* =======================================================================
+     DOM
+     ======================================================================= */
+  const $ = (id) => document.getElementById(id);
+  const boardEl    = $('board');
+  const cellsEl    = $('cells');
+  const tilesEl    = $('tiles');
+  const scoreEl    = $('scoreEl');
+  const bestEl     = $('bestEl');
+  const gamesEl    = $('gamesEl');
+  const scoreBox   = $('scoreBox');
+  const overlayEl  = $('overlay');
+  const cardEl     = $('card');
+  const themeBtn   = $('themeBtn');
+
+  const elMap = new Map();  // tile.id -> DOM 元素
+
+  // 背景 16 个空格
+  for (let i = 0; i < SIZE * SIZE; i++) {
+    const d = document.createElement('div');
+    d.className = 'cell';
+    cellsEl.appendChild(d);
+  }
+
+  /* =======================================================================
+     持久化
+     ======================================================================= */
+  function save() {
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        theme: document.documentElement.dataset.theme,
+        best, history
+      }));
+    } catch (e) { /* 隐私模式等场景忽略 */ }
+  }
+  function load() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) {}
+    if (data && typeof data === 'object') {
+      best    = Number(data.best) || 0;
+      history = Array.isArray(data.history) ? data.history.slice(0, 50) : [];
+      if (data.theme === 'light' || data.theme === 'dark') return data.theme;
+    }
+    return null;
+  }
+
+  /* =======================================================================
+     主题
+     ======================================================================= */
+  function applyTheme(theme, persist) {
+    document.documentElement.dataset.theme = theme;
+    themeBtn.textContent = theme === 'dark' ? '🌙' : '☀️';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f1115' : '#f3f4f7');
+    if (persist) save();
+  }
+
+  /* =======================================================================
+     网格辅助
+
+     【核心：网格合并算法】
+     数据结构与经典 2048 一致，分四步：
+       1) 由 tiles 生成 4×4 的 grid 引用矩阵（空格为 null）；
+       2) 按“移动方向”决定遍历顺序 —— 靠近目标边界的格子先处理，
+          保证同一行/列里的方块不会越过前一个方块或被重复合并；
+       3) 对每个方块找出该方向上“最远可到达的空格(farthest)”以及
+          “再往前一格(next)”——next 格若存在，一定是挡路的方块；
+       4) 若 next 方块数值相同且本回合尚未合并过(mergedThisTurn)，
+          则合并；否则平移到 farthest。合并后立刻把结果方块的
+          mergedThisTurn 置为 true，从而禁止它在同一回合被二次合并
+          （例如 [2,2,4] 向左应得 [4,4] 而不是 [8]）。
+     ======================================================================= */
+
+  // 1) 生成 4×4 引用矩阵（忽略已标记 dead 的方块）
+  function makeGrid() {
+    const g = [];
+    for (let y = 0; y < SIZE; y++) g.push(new Array(SIZE).fill(null));
+    for (const t of tiles) {
+      if (!t.dead) g[t.y][t.x] = t;
+    }
+    return g;
+  }
+
+  // 3) 找出 (x,y) 沿方向 v 的最远空格与前方阻挡格
+  function findFarthest(grid, x, y, v) {
+    let fx = x, fy = y;              // 最远可达的空格（初始为自身）
+    let nx = x + v.x, ny = y + v.y;  // 探针
+    while (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE && !grid[ny][nx]) {
+      fx = nx; fy = ny;
+      nx += v.x; ny += v.y;
+    }
+    const inBoard = nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE;
+    return {
+      farthest: { x: fx, y: fy },
+      next: inBoard ? { x: nx, y: ny } : null   // 越界则为 null
+    };
+  }
+
+  // 某个坐标是否为空
+  function emptyCells() {
+    const g = makeGrid(), out = [];
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++)
+        if (!g[y][x]) out.push({ x, y });
+    return out;
+  }
+
+  // 在随机空格生成新数字：90% 概率 2，10% 概率 4
+  function addRandomTile() {
+    const free = emptyCells();
+    if (!free.length) return null;
+    const spot = free[Math.floor(Math.random() * free.length)];
+    const t = {
+      id: ++uid,
+      value: Math.random() < 0.9 ? 2 : 4,
+      x: spot.x, y: spot.y,
+      dead: false,
+      isNew: true,             // 触发 CSS 出现动画
+      justMerged: false,
+      mergedThisTurn: false
+    };
+    tiles.push(t);
+    return t;
+  }
+
+  /* =======================================================================
+     渲染：把状态同步到 DOM（位移靠 CSS transition 完成）
+     ======================================================================= */
+  function paint(el, value) {
+    const inner = el.firstChild;
+    const s = String(value);
+    if (inner.textContent !== s) inner.textContent = s;
+    const key = value <= WIN ? s : 'super';
+    if (el.dataset.v !== key) el.dataset.v = key;
+    // 位数越多字号越小，保证大数字不出格
+    inner.style.fontSize =
+      s.length <= 2 ? 'calc(var(--cell) * .44)' :
+      s.length === 3 ? 'calc(var(--cell) * .33)' :
+      s.length === 4 ? 'calc(var(--cell) * .25)' :
+                       'calc(var(--cell) * .20)';
+  }
+
+  function syncDOM() {
+    const alive = new Set();
+
+    for (const t of tiles) {
+      alive.add(t.id);
+      let el = elMap.get(t.id);
+
+      if (!el) {
+        // 新元素：先设好坐标再插入文档，避免从 (0,0) 滑入的假动画
+        el = document.createElement('div');
+        el.className = 'tile';
+        el.innerHTML = '<div class="tile-inner"></div>';
+        el.style.setProperty('--x', t.x);
+        el.style.setProperty('--y', t.y);
+        paint(el, t.value);
+        // 动画结束后清掉标记类，保证下次能重新播放
+        el.addEventListener('animationend', function (ev) {
+          if (ev.target === el.firstChild) el.classList.remove('new', 'merged');
+        });
+        elMap.set(t.id, el);
+        tilesEl.appendChild(el);
+      } else {
+        // 已存在的元素：只改坐标 → 浏览器自动补间出滑动位移
+        el.style.setProperty('--x', t.x);
+        el.style.setProperty('--y', t.y);
+        paint(el, t.value);
+      }
+
+      el.dataset.dead = t.dead ? '1' : '0';
+
+      if (t.isNew) {
+        t.isNew = false;
+        el.classList.add('new');
+      }
+      if (t.justMerged) {
+        t.justMerged = false;
+        el.classList.remove('merged');
+        void el.offsetWidth;        // 强制回流，让动画可以重播
+        el.classList.add('merged');
+      }
+    }
+
+    // 回收已消失的方块
+    elMap.forEach(function (el, id) {
+      if (!alive.has(id)) { el.remove(); elMap.delete(id); }
+    });
+  }
+
+  /* =======================================================================
+     计分 UI
+     ======================================================================= */
+  function renderStats() {
+    scoreEl.textContent = score;
+    bestEl.textContent  = best;
+    gamesEl.textContent = history.length;
+  }
+
+  function flashScore(gain) {
+    if (!gain) return;
+    const old = scoreBox.querySelector('.score-add');
+    if (old) old.remove();
+    const s = document.createElement('span');
+    s.className = 'score-add';
+    s.textContent = '+' + gain;
+    scoreBox.appendChild(s);
+    setTimeout(function () { s.remove(); }, 780);
+  }
+
+  /* =======================================================================
+     走一步（唯一的状态变更入口）
+     ======================================================================= */
+  function move(dir) {
+    if (locked || over || modalOpen) return;
+
+    const v = VECTORS[dir];
+    if (!v) return;
+
+    const grid = makeGrid();
+
+    // 2) 遍历顺序：越靠近目标边界的格子越先处理
+    const xOrder = v.x === 1 ? [3, 2, 1, 0] : [0, 1, 2, 3];
+    const yOrder = v.y === 1 ? [3, 2, 1, 0] : [0, 1, 2, 3];
+
+    // 每回合重置合并标记
+    for (const t of tiles) { t.mergedThisTurn = false; t.justMerged = false; }
+
+    let moved = false, gained = 0, reachedWin = false;
+
+    for (const y of yOrder) {
+      for (const x of xOrder) {
+        const tile = grid[y][x];
+        if (!tile) continue;
+
+        const res = findFarthest(grid, x, y, v);
+        const far = res.farthest;
+        const blocker = res.next ? grid[res.next.y][res.next.x] : null;
+
+        if (blocker && blocker.value === tile.value && !blocker.mergedThisTurn) {
+          /* ---- 合并 ---------------------------------------------------
+             blocker 作为“存活方块”留在原地，数值翻倍；
+             tile 标记 dead 并滑到 blocker 所在格，动画结束后再销毁。
+             存活方块叠加 .merged 类，滑行结束的瞬间播放缩放 + 闪光。 */
+          blocker.value *= 2;
+          blocker.mergedThisTurn = true;   // 禁止本回合二次合并
+          blocker.justMerged = true;
+
+          grid[y][x] = null;
+          tile.dead = true;
+          tile.x = res.next.x;
+          tile.y = res.next.y;
+
+          gained += blocker.value;
+          if (blocker.value === WIN) reachedWin = true;
+          moved = true;
+
+        } else if (far.x !== x || far.y !== y) {
+          /* ---- 平移：滑到该方向上最远的空格 ---- */
+          grid[y][x] = null;
+          grid[far.y][far.x] = tile;
+          tile.x = far.x;
+          tile.y = far.y;
+          moved = true;
+        }
+      }
+    }
+
+    if (!moved) return;   // 没有任何方块移动 → 不生成新数字、不计步
+
+    /* ---- 先播放滑动位移 ---- */
+    moves++;
+    score += gained;
+    if (score > best) best = score;
+    renderStats();
+    flashScore(gained);
+    syncDOM();
+
+    locked = true;
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(function () {
+      /* ---- 滑动结束后收尾 ---- */
+      tiles = tiles.filter(function (t) { return !t.dead; });  // 销毁被吞并的方块
+      tiles.forEach(function (t) { t.isNew = false; });
+      addRandomTile();          // 新数字随机生成
+      syncDOM();
+
+      locked = false;
+      save();
+
+      if (reachedWin && !won) {
+        won = true;
+        save();
+        showWin();
+      } else if (isGameOver()) {
+        over = true;
+        recordGame();
+        showGameOver();
+      }
+    }, ANIM);
+  }
+
+  /* =======================================================================
+     终局判定：无空格且相邻无相同数字
+     ======================================================================= */
+  function isGameOver() {
+    const g = makeGrid();
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const t = g[y][x];
+        if (!t) return false;                                   // 还有空格
+        if (x + 1 < SIZE && g[y][x + 1].value === t.value) return false;
+        if (y + 1 < SIZE && g[y + 1][x].value === t.value) return false;
+      }
+    }
+    return true;
+  }
+
+  function maxTile() {
+    let m = 0;
+    for (const t of tiles) if (!t.dead && t.value > m) m = t.value;
+    return m;
+  }
+
+  /* =======================================================================
+     历史战绩
+     ======================================================================= */
+  function recordGame() {
+    if (recorded || moves === 0) return;
+    recorded = true;
+    history.unshift({
+      score: score,
+      max: maxTile(),
+      moves: moves,
+      date: Date.now()
+    });
+    history = history.slice(0, 50);
+    if (score > best) best = score;
+    save();
+    renderStats();
+  }
+
+  function fmtDate(ts) {
+    const d = new Date(ts), p = function (n) { return String(n).padStart(2, '0'); };
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /* =======================================================================
+     弹窗
+     ======================================================================= */
+  function openModal(html, wire, dismissible) {
+    cardEl.innerHTML = html;
+    overlayEl.dataset.dismissible = dismissible ? '1' : '0';
+    overlayEl.classList.add('show');
+    modalOpen = true;
+    if (wire) wire(cardEl);
+  }
+  function closeModal() {
+    overlayEl.classList.remove('show');
+    modalOpen = false;
+  }
+
+  overlayEl.addEventListener('click', function (e) {
+    if (e.target === overlayEl && overlayEl.dataset.dismissible === '1') closeModal();
+  });
+
+  function showWin() {
+    openModal(
+      '<span class="emoji">🎉</span>' +
+      '<h2>达成 2048！</h2>' +
+      '<p class="muted">本局得分 <b>' + score + '</b> · 最高数字 <b>2048</b></p>' +
+      '<div class="card-actions">' +
+        '<button class="btn" data-act="continue">继续挑战</button>' +
+        '<button class="btn primary" data-act="new">再来一局</button>' +
+      '</div>',
+      function (root) {
+        root.querySelector('[data-act="continue"]').onclick = closeModal;
+        root.querySelector('[data-act="new"]').onclick = function () { closeModal(); newGame(true); };
+      });
+  }
+
+  function showGameOver() {
+    openModal(
+      '<span class="emoji">💀</span>' +
+      '<h2>Game Over</h2>' +
+      '<p class="muted">无处可走了 · 本局得分</p>' +
+      '<div class="big">' + score + '</div>' +
+      '<p class="muted">最高数字 ' + maxTile() + ' · 共 ' + moves + ' 步 · 历史第 ' + history.length + ' 局</p>' +
+      '<div class="card-actions">' +
+        '<button class="btn" data-act="hist">历史战绩</button>' +
+        '<button class="btn primary" data-act="new">重新开始</button>' +
+      '</div>',
+      function (root) {
+        root.querySelector('[data-act="new"]').onclick = function () { closeModal(); newGame(false); };
+        root.querySelector('[data-act="hist"]').onclick = showHistory;
+      });
+  }
+
+  function showHistory() {
+    let rows;
+    if (history.length) {
+      rows = history.map(function (r, i) {
+        return '<li>' +
+          '<span class="idx">#' + (history.length - i) + '</span>' +
+          '<span class="sc">' + r.score + '</span>' +
+          '<span class="meta">最大 ' + (r.max || '-') + ' · ' + r.moves + ' 步<br>' + fmtDate(r.date) + '</span>' +
+        '</li>';
+      }).join('');
+    } else {
+      rows = '<li class="empty">还没有历史记录，先玩一局吧</li>';
+    }
+
+    openModal(
+      '<h2>🏆 历史战绩</h2>' +
+      '<p class="muted">已完成 <b>' + history.length + '</b> 局 · 最高分 <b>' + best + '</b></p>' +
+      '<ul class="hist">' + rows + '</ul>' +
+      '<div class="card-actions">' +
+        '<button class="btn" data-act="clear">清空记录</button>' +
+        '<button class="btn primary" data-act="close">关闭</button>' +
+      '</div>',
+      function (root) {
+        root.querySelector('[data-act="close"]').onclick = closeModal;
+        root.querySelector('[data-act="clear"]').onclick = function () {
+          if (!history.length) return;
+          history = [];
+          save();
+          renderStats();
+          showHistory();
+        };
+      }, true);
+  }
+
+  /* =======================================================================
+     开局 / 重置
+     ======================================================================= */
+  function newGame(record) {
+    if (record) recordGame();     // 把当前这局写进历史
+    closeModal();
+    clearTimeout(settleTimer);
+
+    tiles = [];
+    elMap.forEach(function (el) { el.remove(); });
+    elMap.clear();
+    tilesEl.innerHTML = '';
+
+    score = 0; moves = 0;
+    locked = false; won = false; over = false; recorded = false;
+
+    addRandomTile();
+    addRandomTile();
+    syncDOM();
+    renderStats();
+    save();
+  }
+
+  function resetCurrent() {
+    // 重置本局：丢弃当前棋盘，但不写入历史
+    newGame(false);
+  }
+
+  /* =======================================================================
+     事件绑定
+     ======================================================================= */
+  const KEYMAP = {
+    arrowup: 'up', arrowdown: 'down', arrowleft: 'left', arrowright: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right',
+    k: 'up', j: 'down', h: 'left', l: 'right'
+  };
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const key = (e.key || '').toLowerCase();
+    const dir = KEYMAP[key];
+    if (dir) {
+      e.preventDefault();
+      move(dir);
+    } else if (key === 'escape') {
+      closeModal();
+    }
+  }, { passive: false });
+
+  // 触屏滑动
+  let startX = 0, startY = 0, tracking = false;
+  const THRESHOLD = 22;   // 最小滑动距离(px)
+
+  boardEl.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+
+  boardEl.addEventListener('touchmove', function (e) {
+    if (tracking) e.preventDefault();   // 阻止页面滚动 / 下拉刷新
+  }, { passive: false });
+
+  boardEl.addEventListener('touchend', function (e) {
+    if (!tracking) return;
+    tracking = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (Math.max(ax, ay) < THRESHOLD) return;         // 视为点击
+    if (ax > ay) move(dx > 0 ? 'right' : 'left');
+    else         move(dy > 0 ? 'down'  : 'up');
+  });
+
+  boardEl.addEventListener('touchcancel', function () { tracking = false; });
+
+  // 鼠标拖拽（桌面端可选操作）
+  let dragX = 0, dragY = 0, dragging = false;
+  boardEl.addEventListener('mousedown', function (e) {
+    dragging = true; dragX = e.clientX; dragY = e.clientY;
+  });
+  window.addEventListener('mouseup', function (e) {
+    if (!dragging) return;
+    dragging = false;
+    const dx = e.clientX - dragX, dy = e.clientY - dragY;
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (Math.max(ax, ay) < 40) return;
+    if (ax > ay) move(dx > 0 ? 'right' : 'left');
+    else         move(dy > 0 ? 'down'  : 'up');
+  });
+
+  // 按钮
+  $('newBtn').addEventListener('click', function () { newGame(true); });
+  $('resetBtn').addEventListener('click', function () { resetCurrent(); });
+  $('historyBtn').addEventListener('click', showHistory);
+  themeBtn.addEventListener('click', function () {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
+  });
+
+  /* =======================================================================
+     启动
+     ======================================================================= */
+  const savedTheme = load();
+  const initialTheme = savedTheme ||
+    (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  applyTheme(initialTheme, false);
+
+  newGame(false);
+})();
+</script>
+</body>
+</html>
