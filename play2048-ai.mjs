@@ -1,25 +1,4 @@
 #!/usr/bin/env node
-/**
- * play2048-ai.mjs —— 用 expectimax AI 自动操作 2048.html，一路玩到 2048 获胜
- * =============================================================================
- * 零依赖：只用 Node 内置模块 + 系统已安装的 Edge/Chrome（通过 DevTools 协议驱动）。
- *
- * 用法：
- *   node play2048-ai.mjs                 # 打开 2048.html，AI 自动玩到获胜
- *   node play2048-ai.mjs --sim           # 不开浏览器，直接驱动页面脚本（受限环境可用）
- *   node play2048-ai.mjs --head          # 显示浏览器窗口（默认无头）
- *   node play2048-ai.mjs --fast          # 加速模式：压缩动画等待，约 5 倍速
- *   node play2048-ai.mjs --bench 20      # 纯自我对弈 20 局，输出胜率与平均分
- *   node play2048-ai.mjs --selftest      # 校验 AI 走子模型与真实游戏规则一致
- *
- * 工作原理：
- *   1. 启动浏览器 → 用 CDP 打开 2048.html；
- *   2. 从 DOM 读取棋盘（每个 .tile 的 --x/--y 与文本值）；
- *   3. expectimax 搜索（含“随机生成方块”的概率节点）选出最优方向；
- *   4. 用 CDP Input.dispatchKeyEvent 发送真实方向键操作游戏；
- *   5. 出现 2048 即获胜；若这局走死了就自动重开，直到赢下为止。
- * =============================================================================
- */
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -30,17 +9,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const readdirSafe = (dir) => { try { return readdirSync(dir); } catch (e) { return []; } };
 
-/* ===========================================================================
-   1. 2048 核心模型
-   ---------------------------------------------------------------------------
+/* 
    棋盘用长度 16 的 Uint8Array 表示，每格存“指数”：0=空格，1=2，2=4 … 11=2048。
    指数编码让“数值翻倍”等于“指数 +1”，启发式函数里也天然是对数尺度。
-   =========================================================================== */
+ */
 
 const CELLS = 16;
 const WIN_EXP = 11;          // 2^11 = 2048
 
-/* --- 行查找表：把 4 格一行压成 16bit 键，预计算“向左合并”的结果与得分 ------ */
+/* 行查找表：把 4 格一行压成 16bit 键，预计算“向左合并”的结果与得分 */
 const ROW_LUT = new Uint16Array(65536);    // 键 -> 左移后的行
 const ROW_GAIN = new Float64Array(65536);  // 键 -> 本次合并得分
 
@@ -88,6 +65,7 @@ function lineOrder(dir, line, k) {
  * @param {Uint8Array} out 结果写入这里（避免搜索时频繁分配内存）
  * @returns {number} 合并得分；若该方向没有任何方块移动则返回 -1（非法走法）
  */
+
 function moveGrid(g, dir, out) {
   let gained = 0;
   let moved = false;
@@ -139,18 +117,6 @@ function spawnTile(g, rnd) {
   g[spot] = rnd() < 0.9 ? 1 : 2;
   return true;
 }
-
-/* ===========================================================================
-   2. 启发式评估函数
-   ---------------------------------------------------------------------------
-   几个经典维度，越高越好：
-     empty   空格数        —— 留出腾挪空间，是最重要的生存指标
-     mono    单调性        —— 行列数值尽量单向递增/递减，便于把大数挤到一角
-     smooth  平滑度        —— 相邻数值差越小越好，便于将来合并
-     merges  可合并对数    —— 相邻同值对数，直接奖励“马上能合”的局面
-     maxE    最大方块指数  —— 鼓励养大数字
-   另外给“最大块贴角”额外奖励，这是 2048 能长期活下去的关键。
-   =========================================================================== */
 
 // 权重可用环境变量覆盖，便于调参与消融实验
 const envNum = (name, def) => (process.env[name] !== undefined ? Number(process.env[name]) : def);
@@ -214,16 +180,16 @@ function heuristic(g) {
          W_MERGES * merges + W_MAX * maxE + cornerBonus;
 }
 
-/* ===========================================================================
-   3. Expectimax 搜索
-   ---------------------------------------------------------------------------
+/*
+   Expectimax 搜索
+   
    两类节点交替：
      max 节点（玩家）：在 4 个方向里选期望值最高的；
      chance 节点（游戏）：枚举“在哪个空格生成 2 还是 4”的所有可能，
                           按 0.9 / 0.1 的概率加权求平均。
    depth 只统计“玩家层”（每走一步减 1），chance 层不消耗深度。
    搜索缓冲区按层号复用，chance 层原地改格再还原，全程零分配。
-   =========================================================================== */
+ */
 const SCRATCH = Array.from({ length: 16 }, () => new Uint8Array(CELLS));
 const ROOT_BUF = new Uint8Array(CELLS);   // 根节点专用，避免与搜索缓冲区互相覆盖
 const EMPTY_BUF = new Int32Array(CELLS);
@@ -305,9 +271,9 @@ function bestMove(g, depth, rnd = Math.random) {
   return DIR_NAMES[bestDirs[Math.floor(rnd() * bestDirs.length)]];
 }
 
-/* ===========================================================================
-   4. 纯模拟自我对弈（用来测胜率）
-   =========================================================================== */
+/* 
+    纯模拟自我对弈（用于测试胜率）
+ */
 function playGame(depth, rnd = Math.random, maxMoves = 20000) {
   const g = new Uint8Array(CELLS);
   spawnTile(g, rnd);
@@ -331,13 +297,13 @@ function playGame(depth, rnd = Math.random, maxMoves = 20000) {
   return { won: false, dead: false, timeout: true, score, moves, max: maxExp(g) };
 }
 
-/* ===========================================================================
-   5. 自我校验：确认 AI 的走子模型与真实游戏规则完全一致
+/* 
+    自我校验：确认 AI 的走子模型与真实游戏规则完全一致
    （用例来自对 2048.html 实际行为的实测回归）
-   =========================================================================== */
+ */
 function selfTest() {
   const cases = [
-    // name,                    棋盘(指数),       方向,     期望结果（null = 该方向走不动）
+    // name,棋盘(指数),方向,期望结果（null = 该方向无法移动）
     ['两格合并', [[1, 1, 0, 0]], 'left', [[2, 0, 0, 0]]],
     ['两组分别合并', [[1, 1, 2, 2]], 'left', [[2, 3, 0, 0]]],
     ['四个相同两两合并', [[1, 1, 1, 1]], 'left', [[2, 2, 0, 0]]],
@@ -384,9 +350,9 @@ function selfTest() {
   return fail === 0;
 }
 
-/* ===========================================================================
-   6. 浏览器自动化（DevTools 协议）
-   =========================================================================== */
+/* 
+     浏览器自动化（DevTools 协议）
+ */
 const BROWSER_CANDIDATES = [
   process.env.CHROME_PATH,
   process.env.EDGE_PATH,
@@ -490,13 +456,13 @@ function renderGrid(g) {
   return lines.join('\n');
 }
 
-/* ===========================================================================
-   6.5 无浏览器模式：把 2048.html 里的真实脚本装进一个最小 DOM 里直接驱动
-   ---------------------------------------------------------------------------
+/* 
+   无浏览器模式：把 2048.html 里的真实脚本装进一个最小 DOM 里直接驱动
+   
    不重新实现游戏，而是把 2048.html 内联 <script> 原样取出执行，
    再通过它自己的 keydown 监听器“按键”操作 —— 跑的就是页面里那份真实逻辑。
    适用于无法启动浏览器的受限环境（CI / 沙箱）。
-   =========================================================================== */
+ */
 class StubEl {
   constructor(tag) {
     this.tagName = tag;
@@ -689,9 +655,9 @@ async function runSim(opts) {
   return { won: false, exhausted: true, games, moves: 0, score: 0, elapsed: Date.now() - t0, grid: null };
 }
 
-/* ===========================================================================
-   7. 主流程：启动浏览器 → 自动操作 → 直到胜利
-   =========================================================================== */
+/* 
+   主流程：启动浏览器 → 自动操作 → 直到胜利
+ */
 
 /**
  * 用一组启动参数尝试拉起浏览器，拿到 DevTools 端口就返回 { child, port }，否则返回 null。
@@ -942,9 +908,9 @@ async function playOneBrowserGame(cdp, opts, gameNo) {
   return { won: false, timeout: true, moves, score, elapsed: Date.now() - t0, grid: null, max: 2 ** bestSeen };
 }
 
-/* ===========================================================================
-   8. 命令行入口
-   =========================================================================== */
+/* 
+   命令行入口
+ */
 function help() {
   console.log(`
 用 expectimax AI 自动操作 2048，输了自动重开，直到赢下 2048。
