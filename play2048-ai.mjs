@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -706,12 +707,22 @@ async function runBrowser(opts) {
   const browserPath = findBrowser(opts.executable);
   // 每次用一个独立的 profile 目录：即使上一次异常退出、目录还被子进程锁着，
   // 也不会因为删不掉而启动失败。启动时顺手尽力清掉历史残留。
-  const profile = join(HERE, `.ai2048-profile-${process.pid}`);
+  // 放在系统临时目录而不是脚本目录：Chromium 会给自己 profile 加保护性权限，
+  // 若落在受限工作区里，退出后往往删不掉，会一直留在项目里。
+  const profileRoot = tmpdir();
+  const hereDir = HERE;
+  const profile = join(profileRoot, `ai2048-profile-${process.pid}`);
   try { rmSync(profile, { recursive: true, force: true }); } catch (e) { /* 锁着就换新的 */ }
   try { mkdirSync(profile, { recursive: true }); } catch (e) {}
-  for (const name of readdirSafe(HERE)) {
-    if (name.startsWith('.ai2048-profile') && name !== `.ai2048-profile-${process.pid}`) {
-      try { rmSync(join(HERE, name), { recursive: true, force: true }); } catch (e) {}
+  // 清理历史残留：临时目录里的新命名，以及旧版本留在脚本目录里的 .ai2048-profile-*
+  for (const name of readdirSafe(profileRoot)) {
+    if (name.startsWith('ai2048-profile-') && name !== `ai2048-profile-${process.pid}`) {
+      try { rmSync(join(profileRoot, name), { recursive: true, force: true }); } catch (e) {}
+    }
+  }
+  for (const name of readdirSafe(hereDir)) {
+    if (name.startsWith('.ai2048-profile')) {
+      try { rmSync(join(hereDir, name), { recursive: true, force: true }); } catch (e) {}
     }
   }
 
