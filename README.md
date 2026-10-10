@@ -237,11 +237,13 @@ RTL 仿真（3.473350 ms）与网表仿真（3.473300 ms）输出时间几乎一
 
 ```sh
 # 前端
-cd sw && make all
-cd ../verilator && ./run_verilator.sh --build --run ../sw/bin/helloworld.hex
+cd /mnt/d/DSH/croc/sw && make all
+cd ../verilator && VERILATOR_JOBS=12 ./run_verilator.sh --build --run ../sw/bin/helloworld.hex（命令已合并）
 
 # 后端
-cd ../yosys && ./run_synthesis.sh --synth
+cd /mnt/d/DSH/croc/yosys
+PATH=/opt/oss-cad-suite/bin:$PATH ./run_synthesis.sh --synth
+· 查看结果：ls -l out/ 
 
 # OpenROAD
 cd ../openroad && ./run_backend.sh --all
